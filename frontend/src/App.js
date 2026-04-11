@@ -1,7 +1,7 @@
 import { useState, useEffect, createContext, useContext } from "react";
 import { BrowserRouter, Routes, Route, useNavigate, Link } from "react-router-dom";
 import axios from "axios";
-import { Calendar, MapPin, Clock, Search, Bookmark, BookmarkCheck, Plus, User, LogOut, Menu, X, ChevronRight, Ticket, Mail, Phone, ArrowLeft } from "lucide-react";
+import { Calendar, MapPin, Clock, Search, Bookmark, BookmarkCheck, Plus, User, LogOut, Menu, X, ChevronRight, Ticket, Mail, Phone, ArrowLeft, Shield, Check, XCircle, Trash2, Eye, Users, FileText } from "lucide-react";
 import "@/App.css";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -95,6 +95,11 @@ const Header = ({ onAuthClick }) => {
             {user && (
               <Link to="/bookmarks" className="font-bold uppercase tracking-wide hover:text-red-500 transition-colors" data-testid="nav-bookmarks">My Bookmarks</Link>
             )}
+            {user?.role === "admin" && (
+              <Link to="/admin" className="font-bold uppercase tracking-wide hover:text-red-500 transition-colors flex items-center gap-1" data-testid="nav-admin">
+                <Shield className="w-4 h-4" /> Admin
+              </Link>
+            )}
             <Link to="/submit" className="neo-button bg-yellow-400 text-black" data-testid="nav-submit">
               <Plus className="w-4 h-4" /> Submit Event
             </Link>
@@ -123,6 +128,11 @@ const Header = ({ onAuthClick }) => {
               <Link to="/" className="font-bold uppercase tracking-wide" onClick={() => setMobileMenuOpen(false)}>Events</Link>
               {user && (
                 <Link to="/bookmarks" className="font-bold uppercase tracking-wide" onClick={() => setMobileMenuOpen(false)}>My Bookmarks</Link>
+              )}
+              {user?.role === "admin" && (
+                <Link to="/admin" className="font-bold uppercase tracking-wide flex items-center gap-1" onClick={() => setMobileMenuOpen(false)}>
+                  <Shield className="w-4 h-4" /> Admin Dashboard
+                </Link>
               )}
               <Link to="/submit" className="neo-button bg-yellow-400 text-black w-full justify-center" onClick={() => setMobileMenuOpen(false)}>
                 <Plus className="w-4 h-4" /> Submit Event
@@ -695,6 +705,7 @@ const SubmitEventPage = ({ onAuthClick }) => {
   const [imagePreview, setImagePreview] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [submitted, setSubmitted] = useState(false);
   const categories = ["Music", "Sports", "Cultural", "Food", "Art", "Tech", "Community", "Other"];
 
   const handleChange = (e) => {
@@ -740,7 +751,12 @@ const SubmitEventPage = ({ onAuthClick }) => {
         ...formData,
         ticket_price: formData.is_free ? 0 : parseFloat(formData.ticket_price) || 0
       });
-      navigate(`/event/${data.id}`);
+      // If admin, redirect directly; otherwise show pending message
+      if (user?.role === "admin") {
+        navigate(`/event/${data.id}`);
+      } else {
+        setSubmitted(true);
+      }
     } catch (err) {
       const detail = err.response?.data?.detail;
       if (Array.isArray(detail)) {
@@ -774,6 +790,29 @@ const SubmitEventPage = ({ onAuthClick }) => {
           </div>
         )}
 
+        {submitted && (
+          <div className="neo-card p-6 mb-6 bg-green-50 border-green-500" data-testid="submission-success">
+            <div className="flex items-start gap-4">
+              <div className="p-3 bg-green-500 border-2 border-black">
+                <Check className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <p className="font-bold text-lg mb-2">Event Submitted Successfully!</p>
+                <p className="text-gray-600 mb-4">Your event has been submitted for review. Our admin team will review it shortly. Once approved, it will appear on the events page.</p>
+                <div className="flex gap-3">
+                  <Link to="/" className="neo-button bg-black text-white">
+                    Browse Events
+                  </Link>
+                  <button onClick={() => { setSubmitted(false); setFormData({ title: "", description: "", category: "Music", date: "", time: "", location: "", address: "", is_free: true, ticket_price: 0, organizer_name: "", organizer_email: "", organizer_phone: "", image_url: "" }); setImagePreview(null); }} className="neo-button bg-yellow-400 text-black">
+                    <Plus className="w-4 h-4" /> Submit Another
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!submitted && (
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="neo-card p-6">
             <h2 className="text-lg font-bold mb-4 uppercase tracking-wide">Event Details</h2>
@@ -1005,6 +1044,7 @@ const SubmitEventPage = ({ onAuthClick }) => {
             {loading ? "Submitting..." : "Submit Event"}
           </button>
         </form>
+        )}
       </div>
     </div>
   );
@@ -1079,6 +1119,285 @@ const BookmarksPage = ({ onAuthClick }) => {
   );
 };
 
+// Admin Dashboard Page
+const AdminDashboardPage = () => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [events, setEvents] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("pending");
+  const [actionLoading, setActionLoading] = useState({});
+
+  useEffect(() => {
+    if (!user || user.role !== "admin") {
+      navigate("/");
+      return;
+    }
+    fetchData();
+  }, [user, filter]);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const [eventsRes, statsRes] = await Promise.all([
+        axios.get(`${API}/admin/events?status=${filter}`),
+        axios.get(`${API}/admin/stats`)
+      ]);
+      setEvents(eventsRes.data.events);
+      setStats(statsRes.data);
+    } catch (err) {
+      console.error("Failed to fetch admin data", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApprove = async (eventId) => {
+    setActionLoading(prev => ({ ...prev, [eventId]: "approve" }));
+    try {
+      await axios.post(`${API}/admin/events/${eventId}/approve`);
+      fetchData();
+    } catch (err) {
+      console.error("Failed to approve event", err);
+    } finally {
+      setActionLoading(prev => ({ ...prev, [eventId]: null }));
+    }
+  };
+
+  const handleReject = async (eventId) => {
+    setActionLoading(prev => ({ ...prev, [eventId]: "reject" }));
+    try {
+      await axios.post(`${API}/admin/events/${eventId}/reject`);
+      fetchData();
+    } catch (err) {
+      console.error("Failed to reject event", err);
+    } finally {
+      setActionLoading(prev => ({ ...prev, [eventId]: null }));
+    }
+  };
+
+  const handleDelete = async (eventId) => {
+    if (!window.confirm("Are you sure you want to delete this event?")) return;
+    setActionLoading(prev => ({ ...prev, [eventId]: "delete" }));
+    try {
+      await axios.delete(`${API}/admin/events/${eventId}`);
+      fetchData();
+    } catch (err) {
+      console.error("Failed to delete event", err);
+    } finally {
+      setActionLoading(prev => ({ ...prev, [eventId]: null }));
+    }
+  };
+
+  const getStatusBadge = (status) => {
+    const styles = {
+      pending: "bg-yellow-400 text-black",
+      published: "bg-green-500 text-white",
+      rejected: "bg-red-500 text-white"
+    };
+    return styles[status] || "bg-gray-500 text-white";
+  };
+
+  if (!user || user.role !== "admin") return null;
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="mb-8">
+          <h1 className="text-3xl md:text-4xl font-black uppercase tracking-tight flex items-center gap-3">
+            <Shield className="w-10 h-10 text-red-500" /> Admin Dashboard
+          </h1>
+          <p className="text-gray-600 mt-2">Manage event submissions and moderation</p>
+        </div>
+
+        {/* Stats Cards */}
+        {stats && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div className="neo-card p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-yellow-400 border-2 border-black">
+                  <Clock className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="text-2xl font-black">{stats.pending_events}</p>
+                  <p className="text-xs font-bold uppercase text-gray-500">Pending</p>
+                </div>
+              </div>
+            </div>
+            <div className="neo-card p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-green-500 border-2 border-black">
+                  <Check className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <p className="text-2xl font-black">{stats.published_events}</p>
+                  <p className="text-xs font-bold uppercase text-gray-500">Published</p>
+                </div>
+              </div>
+            </div>
+            <div className="neo-card p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-red-500 border-2 border-black">
+                  <XCircle className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <p className="text-2xl font-black">{stats.rejected_events}</p>
+                  <p className="text-xs font-bold uppercase text-gray-500">Rejected</p>
+                </div>
+              </div>
+            </div>
+            <div className="neo-card p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-blue-500 border-2 border-black">
+                  <Users className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <p className="text-2xl font-black">{stats.total_users}</p>
+                  <p className="text-xs font-bold uppercase text-gray-500">Users</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Filter Tabs */}
+        <div className="flex gap-3 mb-6 overflow-x-auto pb-2">
+          {["pending", "published", "rejected"].map((status) => (
+            <button
+              key={status}
+              onClick={() => setFilter(status)}
+              className={`px-4 py-2 border-2 border-black font-bold uppercase text-sm tracking-wide whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(10,10,10,1)] ${
+                filter === status ? "bg-black text-white" : "bg-white text-black hover:-translate-y-0.5 hover:shadow-[4px_4px_0px_0px_rgba(10,10,10,1)]"
+              }`}
+              data-testid={`admin-filter-${status}`}
+            >
+              {status} {status === "pending" && stats ? `(${stats.pending_events})` : ""}
+            </button>
+          ))}
+        </div>
+
+        {/* Events List */}
+        {loading ? (
+          <div className="space-y-4">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="neo-card p-6 animate-pulse">
+                <div className="h-6 bg-gray-200 rounded w-1/3 mb-4"></div>
+                <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+              </div>
+            ))}
+          </div>
+        ) : events.length === 0 ? (
+          <div className="neo-card p-12 text-center">
+            <FileText className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+            <h3 className="text-xl font-bold mb-2">No {filter} events</h3>
+            <p className="text-gray-500">
+              {filter === "pending" ? "All caught up! No events waiting for review." : `No ${filter} events found.`}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4" data-testid="admin-events-list">
+            {events.map((event) => {
+              const categoryColor = getCategoryColor(event.category);
+              return (
+                <div key={event.id} className="neo-card overflow-hidden" data-testid={`admin-event-${event.id}`}>
+                  <div className="flex flex-col md:flex-row">
+                    {/* Event Image */}
+                    <div className="w-full md:w-48 h-32 md:h-auto flex-shrink-0">
+                      {event.image_url ? (
+                        <img src={event.image_url} alt={event.title} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className={`w-full h-full ${categoryColor.bg} flex items-center justify-center`}>
+                          <Calendar className="w-12 h-12 text-white/50" />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Event Details */}
+                    <div className="flex-1 p-4 md:p-6">
+                      <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className={`px-2 py-1 border-2 border-black text-xs font-bold uppercase ${categoryColor.bg} text-white`}>
+                            {event.category}
+                          </span>
+                          <span className={`px-2 py-1 border-2 border-black text-xs font-bold uppercase ${getStatusBadge(event.status)}`}>
+                            {event.status}
+                          </span>
+                        </div>
+                        <Link to={`/event/${event.id}`} className="text-sm font-bold text-red-500 hover:underline flex items-center gap-1" data-testid={`view-event-${event.id}`}>
+                          <Eye className="w-4 h-4" /> View
+                        </Link>
+                      </div>
+
+                      <h3 className="text-xl font-bold mb-2">{event.title}</h3>
+                      
+                      <div className="flex flex-wrap gap-4 text-sm text-gray-600 mb-3">
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-4 h-4" /> {new Date(event.date).toLocaleDateString()}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <MapPin className="w-4 h-4" /> {event.location}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <User className="w-4 h-4" /> {event.organizer_name}
+                        </span>
+                      </div>
+
+                      <p className="text-gray-600 text-sm line-clamp-2 mb-4">{event.description}</p>
+
+                      {/* Action Buttons */}
+                      <div className="flex flex-wrap gap-2">
+                        {event.status === "pending" && (
+                          <>
+                            <button
+                              onClick={() => handleApprove(event.id)}
+                              disabled={actionLoading[event.id]}
+                              className="neo-button bg-green-500 text-white py-2 px-4"
+                              data-testid={`approve-event-${event.id}`}
+                            >
+                              {actionLoading[event.id] === "approve" ? "..." : <><Check className="w-4 h-4" /> Approve</>}
+                            </button>
+                            <button
+                              onClick={() => handleReject(event.id)}
+                              disabled={actionLoading[event.id]}
+                              className="neo-button bg-red-500 text-white py-2 px-4"
+                              data-testid={`reject-event-${event.id}`}
+                            >
+                              {actionLoading[event.id] === "reject" ? "..." : <><XCircle className="w-4 h-4" /> Reject</>}
+                            </button>
+                          </>
+                        )}
+                        {event.status === "rejected" && (
+                          <button
+                            onClick={() => handleApprove(event.id)}
+                            disabled={actionLoading[event.id]}
+                            className="neo-button bg-green-500 text-white py-2 px-4"
+                            data-testid={`approve-event-${event.id}`}
+                          >
+                            {actionLoading[event.id] === "approve" ? "..." : <><Check className="w-4 h-4" /> Approve</>}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleDelete(event.id)}
+                          disabled={actionLoading[event.id]}
+                          className="neo-button bg-gray-200 text-black py-2 px-4"
+                          data-testid={`delete-event-${event.id}`}
+                        >
+                          {actionLoading[event.id] === "delete" ? "..." : <><Trash2 className="w-4 h-4" /> Delete</>}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // Main App
 const AppContent = () => {
   const [authModalOpen, setAuthModalOpen] = useState(false);
@@ -1091,6 +1410,7 @@ const AppContent = () => {
         <Route path="/event/:id" element={<EventDetailPage onAuthClick={() => setAuthModalOpen(true)} />} />
         <Route path="/submit" element={<SubmitEventPage onAuthClick={() => setAuthModalOpen(true)} />} />
         <Route path="/bookmarks" element={<BookmarksPage onAuthClick={() => setAuthModalOpen(true)} />} />
+        <Route path="/admin" element={<AdminDashboardPage />} />
       </Routes>
       <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} />
     </>

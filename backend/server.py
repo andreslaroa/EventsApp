@@ -95,6 +95,10 @@ class BookmarkResponse(BaseModel):
     event_id: str
     created_at: str
 
+# Admin credentials from env
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@cityevents.com")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
+
 # ===================== PASSWORD HELPERS =====================
 
 def hash_password(password: str) -> str:
@@ -156,6 +160,12 @@ async def get_optional_user(request: Request) -> Optional[dict]:
         return await get_current_user(request)
     except HTTPException:
         return None
+
+async def get_admin_user(request: Request) -> dict:
+    user = await get_current_user(request)
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
 
 # ===================== AUTH ENDPOINTS =====================
 
@@ -239,6 +249,9 @@ async def create_event(event_data: EventCreate, request: Request):
     if event_data.category not in CATEGORIES:
         raise HTTPException(status_code=400, detail=f"Invalid category. Must be one of: {CATEGORIES}")
     
+    # Admin events are auto-published, user events are pending
+    status = "published" if user.get("role") == "admin" else "pending"
+    
     event_doc = {
         "title": event_data.title,
         "description": event_data.description,
@@ -255,7 +268,7 @@ async def create_event(event_data: EventCreate, request: Request):
         "image_url": event_data.image_url,
         "created_by": user["id"],
         "created_at": datetime.now(timezone.utc),
-        "status": "published"
+        "status": status
     }
     
     result = await db.events.insert_one(event_doc)
@@ -349,6 +362,116 @@ async def get_event(event_id: str):
         "created_at": event["created_at"].isoformat() if isinstance(event["created_at"], datetime) else event["created_at"],
         "status": event["status"]
     }
+
+# ===================== ADMIN ENDPOINTS =====================
+
+@api_router.get("/admin/events")
+async def get_admin_events(request: Request, status: Optional[str] = None):
+    """Get all events for admin (including pending)"""
+    await get_admin_user(request)
+    
+    query = {}
+    if status:
+        query["status"] = status
+    
+    events = await db.events.find(query).sort("created_at", -1).to_list(100)
+    
+    result = []
+    for event in events:
+        result.append({
+            "id": str(event["_id"]),
+            "title": event["title"],
+            "description": event["description"],
+            "category": event["category"],
+            "date": event["date"],
+            "time": event["time"],
+            "location": event["location"],
+            "address": event["address"],
+            "ticket_price": event["ticket_price"],
+            "is_free": event["is_free"],
+            "organizer_name": event["organizer_name"],
+            "organizer_email": event["organizer_email"],
+            "organizer_phone": event.get("organizer_phone"),
+            "image_url": event.get("image_url"),
+            "created_by": event["created_by"],
+            "created_at": event["created_at"].isoformat() if isinstance(event["created_at"], datetime) else event["created_at"],
+            "status": event["status"]
+        })
+    
+    return {"events": result, "total": len(result)}
+
+@api_router.get("/admin/stats")
+async def get_admin_stats(request: Request):
+    """Get admin dashboard stats"""
+    await get_admin_user(request)
+    
+    total_events = await db.events.count_documents({})
+    pending_events = await db.events.count_documents({"status": "pending"})
+    published_events = await db.events.count_documents({"status": "published"})
+    rejected_events = await db.events.count_documents({"status": "rejected"})
+    total_users = await db.users.count_documents({})
+    
+    return {
+        "total_events": total_events,
+        "pending_events": pending_events,
+        "published_events": published_events,
+        "rejected_events": rejected_events,
+        "total_users": total_users
+    }
+
+@api_router.post("/admin/events/{event_id}/approve")
+async def approve_event(event_id: str, request: Request):
+    """Approve a pending event"""
+    await get_admin_user(request)
+    
+    try:
+        result = await db.events.update_one(
+            {"_id": ObjectId(event_id)},
+            {"$set": {"status": "published"}}
+        )
+    except:
+        raise HTTPException(status_code=400, detail="Invalid event ID")
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    return {"message": "Event approved", "status": "published"}
+
+@api_router.post("/admin/events/{event_id}/reject")
+async def reject_event(event_id: str, request: Request):
+    """Reject a pending event"""
+    await get_admin_user(request)
+    
+    try:
+        result = await db.events.update_one(
+            {"_id": ObjectId(event_id)},
+            {"$set": {"status": "rejected"}}
+        )
+    except:
+        raise HTTPException(status_code=400, detail="Invalid event ID")
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    return {"message": "Event rejected", "status": "rejected"}
+
+@api_router.delete("/admin/events/{event_id}")
+async def delete_event(event_id: str, request: Request):
+    """Delete an event"""
+    await get_admin_user(request)
+    
+    try:
+        result = await db.events.delete_one({"_id": ObjectId(event_id)})
+    except:
+        raise HTTPException(status_code=400, detail="Invalid event ID")
+    
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    # Also delete related bookmarks
+    await db.bookmarks.delete_many({"event_id": event_id})
+    
+    return {"message": "Event deleted"}
 
 # ===================== BOOKMARKS ENDPOINTS =====================
 
@@ -457,6 +580,27 @@ async def upload_image(file: UploadFile = File(...)):
 async def startup_event():
     await db.users.create_index("email", unique=True)
     await db.bookmarks.create_index([("user_id", 1), ("event_id", 1)], unique=True)
+    
+    # Seed admin user
+    admin_email = ADMIN_EMAIL.lower()
+    existing_admin = await db.users.find_one({"email": admin_email})
+    if existing_admin is None:
+        admin_doc = {
+            "name": "Admin",
+            "email": admin_email,
+            "password_hash": hash_password(ADMIN_PASSWORD),
+            "role": "admin",
+            "created_at": datetime.now(timezone.utc)
+        }
+        await db.users.insert_one(admin_doc)
+        logger.info(f"Created admin user: {admin_email}")
+    elif not verify_password(ADMIN_PASSWORD, existing_admin["password_hash"]):
+        # Update password if changed in env
+        await db.users.update_one(
+            {"email": admin_email},
+            {"$set": {"password_hash": hash_password(ADMIN_PASSWORD)}}
+        )
+        logger.info(f"Updated admin password for: {admin_email}")
     
     # Seed sample events if none exist
     event_count = await db.events.count_documents({})
