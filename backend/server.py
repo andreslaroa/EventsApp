@@ -294,7 +294,20 @@ async def create_event(event_data: EventCreate, request: Request):
     }
 
 @api_router.get("/events")
-async def get_events(category: Optional[str] = None, search: Optional[str] = None, limit: int = 50, skip: int = 0):
+async def get_events(
+    category: Optional[str] = None,
+    search: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    location: Optional[str] = None,
+    pricing: Optional[str] = None,
+    price_min: Optional[float] = None,
+    price_max: Optional[float] = None,
+    time_of_day: Optional[str] = None,
+    sort_by: Optional[str] = "date_asc",
+    limit: int = 50,
+    skip: int = 0
+):
     query = {"status": "published"}
     
     if category and category != "All":
@@ -307,7 +320,84 @@ async def get_events(category: Optional[str] = None, search: Optional[str] = Non
             {"location": {"$regex": search, "$options": "i"}}
         ]
     
-    events = await db.events.find(query, {"_id": 1, "title": 1, "description": 1, "category": 1, "date": 1, "time": 1, "location": 1, "address": 1, "ticket_price": 1, "is_free": 1, "organizer_name": 1, "organizer_email": 1, "organizer_phone": 1, "image_url": 1, "created_by": 1, "created_at": 1, "status": 1}).sort("date", 1).skip(skip).limit(limit).to_list(limit)
+    # Date range filter
+    if date_from or date_to:
+        date_filter = {}
+        if date_from:
+            date_filter["$gte"] = date_from
+        if date_to:
+            date_filter["$lte"] = date_to
+        query["date"] = date_filter
+    
+    # Location filter (text search on location + address)
+    if location:
+        loc_regex = {"$regex": location, "$options": "i"}
+        if "$or" in query:
+            # Combine with existing $or using $and
+            existing_or = query.pop("$or")
+            query["$and"] = [
+                {"$or": existing_or},
+                {"$or": [{"location": loc_regex}, {"address": loc_regex}]}
+            ]
+        else:
+            query["$or"] = [{"location": loc_regex}, {"address": loc_regex}]
+    
+    # Pricing filter
+    if pricing == "free":
+        query["is_free"] = True
+    elif pricing == "paid":
+        query["is_free"] = False
+    
+    # Price range filter (only for paid events)
+    if price_min is not None or price_max is not None:
+        price_filter = {}
+        if price_min is not None:
+            price_filter["$gte"] = price_min
+        if price_max is not None:
+            price_filter["$lte"] = price_max
+        query["ticket_price"] = price_filter
+    
+    # Time of day filter
+    if time_of_day:
+        time_ranges = {
+            "morning": ("05:00", "11:59"),
+            "afternoon": ("12:00", "16:59"),
+            "evening": ("17:00", "20:59"),
+            "night": ("21:00", "04:59"),
+        }
+        if time_of_day in time_ranges:
+            t_start, t_end = time_ranges[time_of_day]
+            if time_of_day == "night":
+                query["$or"] = query.get("$or", []) or []
+                # Night wraps around midnight
+                if "$and" not in query:
+                    query["$and"] = []
+                query["$and"].append({
+                    "$or": [
+                        {"time": {"$gte": t_start}},
+                        {"time": {"$lte": t_end}}
+                    ]
+                })
+            else:
+                query["time"] = {"$gte": t_start, "$lte": t_end}
+    
+    # Sorting
+    sort_field, sort_dir = "date", 1
+    if sort_by == "date_asc":
+        sort_field, sort_dir = "date", 1
+    elif sort_by == "date_desc":
+        sort_field, sort_dir = "date", -1
+    elif sort_by == "price_asc":
+        sort_field, sort_dir = "ticket_price", 1
+    elif sort_by == "price_desc":
+        sort_field, sort_dir = "ticket_price", -1
+    elif sort_by == "newest":
+        sort_field, sort_dir = "created_at", -1
+    
+    projection = {"_id": 1, "title": 1, "description": 1, "category": 1, "date": 1, "time": 1, "location": 1, "address": 1, "ticket_price": 1, "is_free": 1, "organizer_name": 1, "organizer_email": 1, "organizer_phone": 1, "image_url": 1, "created_by": 1, "created_at": 1, "status": 1}
+    
+    total = await db.events.count_documents(query)
+    events = await db.events.find(query, projection).sort(sort_field, sort_dir).skip(skip).limit(limit).to_list(limit)
     
     result = []
     for event in events:
@@ -331,7 +421,7 @@ async def get_events(category: Optional[str] = None, search: Optional[str] = Non
             "status": event["status"]
         })
     
-    return {"events": result, "total": len(result)}
+    return {"events": result, "total": total}
 
 @api_router.get("/events/{event_id}")
 async def get_event(event_id: str):

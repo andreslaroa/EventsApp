@@ -1,7 +1,7 @@
 import { useState, useEffect, createContext, useContext } from "react";
 import { BrowserRouter, Routes, Route, useNavigate, Link } from "react-router-dom";
 import axios from "axios";
-import { Calendar, MapPin, Clock, Search, Bookmark, BookmarkCheck, Plus, User, LogOut, Menu, X, ChevronRight, Ticket, Mail, Phone, ArrowLeft, Shield, Check, XCircle, Trash2, Eye, Users, FileText } from "lucide-react";
+import { Calendar, MapPin, Clock, Search, Bookmark, BookmarkCheck, Plus, User, LogOut, Menu, X, ChevronRight, Ticket, Mail, Phone, ArrowLeft, Shield, Check, XCircle, Trash2, Eye, Users, FileText, Filter, ChevronDown, ChevronUp, DollarSign, Sun, Sunset, Moon, SlidersHorizontal, RotateCcw } from "lucide-react";
 import "@/App.css";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -367,14 +367,35 @@ const EventCard = ({ event, size = "normal", onBookmarkChange }) => {
 // Home Page
 const HomePage = ({ onAuthClick }) => {
   const [events, setEvents] = useState([]);
+  const [totalEvents, setTotalEvents] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
+  // Advanced filters
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [locationQuery, setLocationQuery] = useState("");
+  const [pricing, setPricing] = useState("all");
+  const [priceMin, setPriceMin] = useState("");
+  const [priceMax, setPriceMax] = useState("");
+  const [timeOfDay, setTimeOfDay] = useState("");
+  const [sortBy, setSortBy] = useState("date_asc");
+
   const categories = ["All", "Music", "Sports", "Cultural", "Food", "Art", "Tech", "Community"];
+
+  // Count active filters (excluding category and search which are always visible)
+  const activeFilterCount = [
+    dateFrom, dateTo, locationQuery,
+    pricing !== "all" ? pricing : "",
+    priceMin, priceMax, timeOfDay,
+    sortBy !== "date_asc" ? sortBy : ""
+  ].filter(Boolean).length;
 
   useEffect(() => {
     fetchEvents();
-  }, [selectedCategory, searchQuery]);
+  }, [selectedCategory, searchQuery, dateFrom, dateTo, locationQuery, pricing, priceMin, priceMax, timeOfDay, sortBy]);
 
   const fetchEvents = async () => {
     setLoading(true);
@@ -382,14 +403,69 @@ const HomePage = ({ onAuthClick }) => {
       const params = new URLSearchParams();
       if (selectedCategory !== "All") params.append("category", selectedCategory);
       if (searchQuery) params.append("search", searchQuery);
+      if (dateFrom) params.append("date_from", dateFrom);
+      if (dateTo) params.append("date_to", dateTo);
+      if (locationQuery) params.append("location", locationQuery);
+      if (pricing !== "all") params.append("pricing", pricing);
+      if (priceMin) params.append("price_min", priceMin);
+      if (priceMax) params.append("price_max", priceMax);
+      if (timeOfDay) params.append("time_of_day", timeOfDay);
+      if (sortBy) params.append("sort_by", sortBy);
       const { data } = await axios.get(`${API}/events?${params}`);
       setEvents(data.events);
+      setTotalEvents(data.total);
     } catch (err) {
       console.error("Failed to fetch events", err);
     } finally {
       setLoading(false);
     }
   };
+
+  const clearAllFilters = () => {
+    setSelectedCategory("All");
+    setSearchQuery("");
+    setDateFrom("");
+    setDateTo("");
+    setLocationQuery("");
+    setPricing("all");
+    setPriceMin("");
+    setPriceMax("");
+    setTimeOfDay("");
+    setSortBy("date_asc");
+  };
+
+  const removeFilter = (filterName) => {
+    const setters = {
+      dateFrom: () => setDateFrom(""),
+      dateTo: () => setDateTo(""),
+      location: () => setLocationQuery(""),
+      pricing: () => setPricing("all"),
+      priceMin: () => setPriceMin(""),
+      priceMax: () => setPriceMax(""),
+      timeOfDay: () => setTimeOfDay(""),
+      sortBy: () => setSortBy("date_asc"),
+      category: () => setSelectedCategory("All"),
+      search: () => setSearchQuery(""),
+    };
+    setters[filterName]?.();
+  };
+
+  // Build active filter tags
+  const activeFilterTags = [];
+  if (selectedCategory !== "All") activeFilterTags.push({ key: "category", label: `Category: ${selectedCategory}` });
+  if (searchQuery) activeFilterTags.push({ key: "search", label: `Search: "${searchQuery}"` });
+  if (dateFrom) activeFilterTags.push({ key: "dateFrom", label: `From: ${new Date(dateFrom).toLocaleDateString()}` });
+  if (dateTo) activeFilterTags.push({ key: "dateTo", label: `To: ${new Date(dateTo).toLocaleDateString()}` });
+  if (locationQuery) activeFilterTags.push({ key: "location", label: `Location: "${locationQuery}"` });
+  if (pricing === "free") activeFilterTags.push({ key: "pricing", label: "Free events only" });
+  if (pricing === "paid") activeFilterTags.push({ key: "pricing", label: "Paid events only" });
+  if (priceMin) activeFilterTags.push({ key: "priceMin", label: `Min price: $${priceMin}` });
+  if (priceMax) activeFilterTags.push({ key: "priceMax", label: `Max price: $${priceMax}` });
+  if (timeOfDay) activeFilterTags.push({ key: "timeOfDay", label: `Time: ${timeOfDay.charAt(0).toUpperCase() + timeOfDay.slice(1)}` });
+  if (sortBy !== "date_asc") {
+    const sortLabels = { date_desc: "Date (Latest)", price_asc: "Price (Low-High)", price_desc: "Price (High-Low)", newest: "Recently added" };
+    activeFilterTags.push({ key: "sortBy", label: `Sort: ${sortLabels[sortBy]}` });
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -431,10 +507,10 @@ const HomePage = ({ onAuthClick }) => {
         </div>
       </section>
 
-      {/* Category Filters */}
+      {/* Category Filters + Advanced Filters Toggle */}
       <section className="bg-white border-b-2 border-black">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+          <div className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-hide">
             {categories.map((category) => {
               const colors = getCategoryColor(category);
               const isActive = selectedCategory === category;
@@ -451,15 +527,229 @@ const HomePage = ({ onAuthClick }) => {
                 </button>
               );
             })}
+            <div className="border-l-2 border-gray-300 h-8 mx-1 flex-shrink-0"></div>
+            <button
+              onClick={() => setFiltersOpen(!filtersOpen)}
+              className={`px-4 py-2 border-2 border-black font-bold uppercase text-sm tracking-wide whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(10,10,10,1)] hover:-translate-y-0.5 hover:shadow-[4px_4px_0px_0px_rgba(10,10,10,1)] flex items-center gap-2 ${
+                filtersOpen || activeFilterCount > 0 ? "bg-red-500 text-white" : "bg-white text-black"
+              }`}
+              data-testid="toggle-filters-button"
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="bg-white text-red-500 text-xs font-black w-5 h-5 flex items-center justify-center border border-black">
+                  {activeFilterCount}
+                </span>
+              )}
+              {filtersOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </button>
           </div>
         </div>
       </section>
+
+      {/* Advanced Filters Panel */}
+      {filtersOpen && (
+        <section className="bg-white border-b-2 border-black" data-testid="advanced-filters-panel">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {/* Date Range */}
+              <div className="space-y-3">
+                <label className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide">
+                  <Calendar className="w-4 h-4 text-red-500" /> Date Range
+                </label>
+                <div className="space-y-2">
+                  <div>
+                    <span className="text-xs font-medium text-gray-500 mb-1 block">From</span>
+                    <input
+                      type="date"
+                      value={dateFrom}
+                      onChange={(e) => setDateFrom(e.target.value)}
+                      className="neo-input w-full py-2 px-3 text-sm"
+                      data-testid="filter-date-from"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-xs font-medium text-gray-500 mb-1 block">To</span>
+                    <input
+                      type="date"
+                      value={dateTo}
+                      onChange={(e) => setDateTo(e.target.value)}
+                      className="neo-input w-full py-2 px-3 text-sm"
+                      data-testid="filter-date-to"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Location */}
+              <div className="space-y-3">
+                <label className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide">
+                  <MapPin className="w-4 h-4 text-red-500" /> Location
+                </label>
+                <input
+                  type="text"
+                  value={locationQuery}
+                  onChange={(e) => setLocationQuery(e.target.value)}
+                  placeholder="City, venue, or address..."
+                  className="neo-input w-full py-2 px-3 text-sm"
+                  data-testid="filter-location"
+                />
+                <p className="text-xs text-gray-400">Search by city name, venue, or address</p>
+              </div>
+
+              {/* Pricing */}
+              <div className="space-y-3">
+                <label className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide">
+                  <DollarSign className="w-4 h-4 text-red-500" /> Pricing
+                </label>
+                <div className="flex gap-2">
+                  {[
+                    { value: "all", label: "All" },
+                    { value: "free", label: "Free" },
+                    { value: "paid", label: "Paid" }
+                  ].map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => setPricing(opt.value)}
+                      className={`flex-1 px-3 py-2 border-2 border-black font-bold text-xs uppercase transition-all ${
+                        pricing === opt.value
+                          ? "bg-black text-white shadow-none"
+                          : "bg-white text-black shadow-[2px_2px_0px_0px_rgba(10,10,10,1)] hover:-translate-y-0.5"
+                      }`}
+                      data-testid={`filter-pricing-${opt.value}`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                {pricing === "paid" && (
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="number"
+                      value={priceMin}
+                      onChange={(e) => setPriceMin(e.target.value)}
+                      placeholder="Min $"
+                      min="0"
+                      className="neo-input w-full py-2 px-3 text-sm"
+                      data-testid="filter-price-min"
+                    />
+                    <span className="text-gray-400 font-bold">-</span>
+                    <input
+                      type="number"
+                      value={priceMax}
+                      onChange={(e) => setPriceMax(e.target.value)}
+                      placeholder="Max $"
+                      min="0"
+                      className="neo-input w-full py-2 px-3 text-sm"
+                      data-testid="filter-price-max"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Time of Day + Sort */}
+              <div className="space-y-3">
+                <label className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide">
+                  <Clock className="w-4 h-4 text-red-500" /> Time of Day
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { value: "morning", label: "Morning", icon: <Sun className="w-3 h-3" />, sub: "5am-12pm" },
+                    { value: "afternoon", label: "Afternoon", icon: <Sun className="w-3 h-3" />, sub: "12-5pm" },
+                    { value: "evening", label: "Evening", icon: <Sunset className="w-3 h-3" />, sub: "5-9pm" },
+                    { value: "night", label: "Night", icon: <Moon className="w-3 h-3" />, sub: "9pm-5am" }
+                  ].map((t) => (
+                    <button
+                      key={t.value}
+                      onClick={() => setTimeOfDay(timeOfDay === t.value ? "" : t.value)}
+                      className={`px-2 py-2 border-2 border-black font-bold text-xs uppercase transition-all flex flex-col items-center gap-0.5 ${
+                        timeOfDay === t.value
+                          ? "bg-black text-white shadow-none"
+                          : "bg-white text-black shadow-[2px_2px_0px_0px_rgba(10,10,10,1)] hover:-translate-y-0.5"
+                      }`}
+                      data-testid={`filter-time-${t.value}`}
+                    >
+                      <span className="flex items-center gap-1">{t.icon} {t.label}</span>
+                      <span className="text-[10px] opacity-60 font-medium normal-case">{t.sub}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <label className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide mt-4">
+                  <Filter className="w-4 h-4 text-red-500" /> Sort By
+                </label>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  className="neo-input w-full py-2 px-3 text-sm"
+                  data-testid="filter-sort-by"
+                >
+                  <option value="date_asc">Date (Soonest first)</option>
+                  <option value="date_desc">Date (Latest first)</option>
+                  <option value="price_asc">Price (Low to High)</option>
+                  <option value="price_desc">Price (High to Low)</option>
+                  <option value="newest">Recently Added</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Clear All */}
+            <div className="flex justify-end mt-4">
+              <button
+                onClick={clearAllFilters}
+                className="neo-button bg-gray-200 text-black py-2"
+                data-testid="clear-all-filters"
+              >
+                <RotateCcw className="w-4 h-4" /> Clear All Filters
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Active Filter Tags */}
+      {activeFilterTags.length > 0 && (
+        <section className="bg-gray-50">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-bold uppercase text-gray-400">Active filters:</span>
+              {activeFilterTags.map((tag) => (
+                <span
+                  key={tag.key}
+                  className="inline-flex items-center gap-1 px-3 py-1 bg-white border-2 border-black text-xs font-bold shadow-[2px_2px_0px_0px_rgba(10,10,10,1)]"
+                  data-testid={`active-filter-${tag.key}`}
+                >
+                  {tag.label}
+                  <button
+                    onClick={() => removeFilter(tag.key)}
+                    className="ml-1 hover:text-red-500 transition-colors"
+                    data-testid={`remove-filter-${tag.key}`}
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              ))}
+              {activeFilterTags.length > 1 && (
+                <button
+                  onClick={clearAllFilters}
+                  className="text-xs font-bold text-red-500 hover:underline uppercase"
+                  data-testid="clear-all-tags"
+                >
+                  Clear All
+                </button>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Events Grid */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="flex items-center justify-between mb-8">
           <h2 className="text-2xl md:text-3xl font-bold tracking-tight">
             {selectedCategory === "All" ? "Upcoming Events" : `${selectedCategory} Events`}
+            <span className="text-base font-medium text-gray-500 ml-3">({totalEvents} found)</span>
           </h2>
           <Link to="/submit" className="neo-button bg-red-500 text-white" data-testid="submit-event-cta">
             <Plus className="w-4 h-4" /> Add Event
@@ -482,10 +772,17 @@ const HomePage = ({ onAuthClick }) => {
           <div className="text-center py-16">
             <Calendar className="w-16 h-16 mx-auto mb-4 text-gray-300" />
             <h3 className="text-xl font-bold mb-2">No events found</h3>
-            <p className="text-gray-500 mb-6">Be the first to add an event!</p>
-            <Link to="/submit" className="neo-button bg-red-500 text-white inline-flex">
-              <Plus className="w-4 h-4" /> Submit Event
-            </Link>
+            <p className="text-gray-500 mb-4">Try adjusting your filters or search criteria.</p>
+            {activeFilterTags.length > 0 && (
+              <button onClick={clearAllFilters} className="neo-button bg-black text-white mb-4">
+                <RotateCcw className="w-4 h-4" /> Clear Filters
+              </button>
+            )}
+            <div>
+              <Link to="/submit" className="neo-button bg-red-500 text-white inline-flex">
+                <Plus className="w-4 h-4" /> Submit Event
+              </Link>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
