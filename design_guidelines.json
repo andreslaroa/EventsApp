@@ -1,0 +1,128 @@
+{
+  "theme": "LIGHT",
+  "archetype": "6 (Vibrant Play) combined with Neo-Brutalist elements for structured modern contrast.",
+  "design_philosophy": "Neo-Brutalist Event Hub. Bold, unapologetic, and highly structured. Combines raw energy (stark black borders, heavy shadows, vibrant category colors) with organized clarity (bento grids, clean typography) to make finding and submitting events an exciting, tactile experience. We avoid standard soft SaaS shadows in favor of aggressive, playful geometry.",
+  "colors": {
+    "backgrounds": {
+      "page_base": "#FAFAFA",
+      "surface_default": "#FFFFFF",
+      "surface_alt": "#F3F4F6",
+      "surface_dark": "#0A0A0A"
+    },
+    "text": {
+      "primary": "#0A0A0A",
+      "secondary": "#4B5563",
+      "inverse": "#FAFAFA",
+      "accent": "#FF3B30"
+    },
+    "borders": {
+      "heavy": "#0A0A0A",
+      "light": "#D1D5DB"
+    },
+    "accents": {
+      "primary_cta": "#FF3B30",
+      "hover_cta": "#DC2626",
+      "category_music": "#2563EB",
+      "category_sports": "#22C55E",
+      "category_cultural": "#F97316",
+      "category_food": "#EAB308"
+    }
+  },
+  "typography": {
+    "fonts": {
+      "heading": "'Clash Display', 'Cabinet Grotesk', sans-serif",
+      "body": "'Satoshi', 'IBM Plex Sans', sans-serif"
+    },
+    "hierarchy": {
+      "h1": "text-5xl md:text-6xl font-black tracking-tighter uppercase",
+      "h2": "text-3xl md:text-4xl font-bold tracking-tight",
+      "h3": "text-xl md:text-2xl font-semibold tracking-tight",
+      "h4": "text-lg font-bold uppercase tracking-widest",
+      "body_main": "text-base md:text-lg font-medium leading-relaxed",
+      "body_small": "text-sm font-medium",
+      "overline": "text-xs font-black uppercase tracking-[0.2em]"
+    }
+  },
+  "spacing_and_layout": {
+    "philosophy": "Generous spacing within structured containers. Sharp edges. No soft blurring.",
+    "scale": {
+      "container_padding": "p-6 md:p-8",
+      "section_gap": "gap-12 md:gap-24",
+      "element_gap": "gap-4 md:gap-6"
+    },
+    "grid_strategy": {
+      "homepage_hero": "Bento Grid Mode A (Tetris). Asymmetrical overlapping or varied span sizes. grid-cols-1 md:grid-cols-12 gap-6.",
+      "event_listing": "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8",
+      "form_layout": "grid-cols-1 gap-6 max-w-2xl mx-auto"
+    }
+  },
+  "surface_strategies": {
+    "cards": "Neo-Brutalist: Flat white or vibrant background, border-2 border-black, shadow-[4px_4px_0px_0px_rgba(10,10,10,1)]. rounded-none or rounded-sm.",
+    "buttons": "border-2 border-black font-bold uppercase tracking-widest px-8 py-4 shadow-[4px_4px_0px_0px_rgba(10,10,10,1)] transition-all hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[6px_6px_0px_0px_rgba(10,10,10,1)] active:translate-y-0 active:translate-x-0 active:shadow-none",
+    "inputs": "bg-white border-2 border-black p-4 text-base focus:outline-none focus:ring-4 focus:ring-accent/20 focus:border-accent shadow-[2px_2px_0px_0px_rgba(10,10,10,1)]",
+    "badges": "px-3 py-1 border-2 border-black text-xs font-bold uppercase shadow-[2px_2px_0px_0px_rgba(10,10,10,1)]"
+  },
+  "animations": {
+    "hover": "Mechanical, tactile snaps. Instant translation with bouncy shadow expansion. Do not use slow fades.",
+    "page_load": "Staggered slide up for lists. Hard cuts over soft dissolves.",
+    "scrolling": "Lenis smooth scroll highly recommended for momentum."
+  },
+  "component_guidelines": {
+    "header": "Solid background (white or pastel) with a hard 2px black bottom border. Sticky top. z-50. Navigation must be visible on desktop, no hamburger unless mobile.",
+    "event_card": "Top half: Image with aggressive 2px border bottom separating it from content. Bottom half: Content area with Event Title (H3), Date, Location, and Category Badge. Use specific category color for the badge background.",
+    "forms": "Use Shadcn customized heavily. Strip all soft radii and subtle shadows. Apply Neo-brutalist solid black borders and heavy box-shadows. Labels must be bold.",
+    "category_filters": "Row of buttons. Active state inverts colors (black background, white text) while inactive states retain white background with colored text and black borders.",
+    "icons": "Use @phosphor-icons/react or lucide-react. Stroke width should be 2px to match borders."
+  },
+  "accessibility": {
+    "contrast": "Extremely high. Black borders guarantee separation. Text over images must have solid background plates or heavy black text-shadow.",
+    "focus": "focus:ring-4 focus:ring-accent focus:outline-none on all interactive elements.",
+    "testing": "MANDATORY: All interactive elements must have data-testid attributes (e.g., data-testid='submit-event-button')."
+  },
+  "image_urls": [
+    {
+      "category": "hero_main",
+      "url": "https://static.prod-images.emergentagent.com/jobs/ac8bfdc1-b85e-47d9-b52f-f35445732af9/images/eda30ced4765acea61767da72f272abc533fc0b8193042e88452eb9df5ea26ed.png",
+      "description": "Dynamic collage of city life, cultural event, and music concert in a neo-brutalist layout. Use in the primary hero bento grid."
+    },
+    {
+      "category": "hero_secondary",
+      "url": "https://static.prod-images.emergentagent.com/jobs/ac8bfdc1-b85e-47d9-b52f-f35445732af9/images/fa2e2df76d9199c4e9cd8e5c3e8d3a1886f411a9b46154660d4d853d17509e0e.png",
+      "description": "Vibrant music festival crowd from stage view. Use for a featured music event or secondary hero grid item."
+    },
+    {
+      "category": "event_music",
+      "url": "https://images.pexels.com/photos/196652/pexels-photo-196652.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "description": "Energetic concert scene with a vibrant audience and band performing under bright lights."
+    },
+    {
+      "category": "event_food",
+      "url": "https://images.unsplash.com/photo-1760026759916-16e48b34cee5?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzF8MHwxfHNlYXJjaHwxfHxmb29kJTIwZmVzdGl2YWwlMjBvdXRkb29yJTIwY29va2luZ3xlbnwwfHx8fDE3NzU4OTk0ODN8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Elderly woman cooking meat at a food stall, perfect for food festival event placeholder."
+    },
+    {
+      "category": "event_cultural",
+      "url": "https://images.unsplash.com/photo-1756694915372-ba61beaa2b0b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxOTJ8MHwxfHNlYXJjaHwyfHxjaXR5JTIwc3RyZWV0JTIwZmVzdGl2YWwlMjBjcm93ZHxlbnwwfHx8fDE3NzU4OTk0ODN8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Women in traditional attire participating in a parade, excellent for cultural event listing."
+    },
+    {
+      "category": "sponsor_1",
+      "url": "https://static.prod-images.emergentagent.com/jobs/ac8bfdc1-b85e-47d9-b52f-f35445732af9/images/2bc455b27477b7749173959b2b7cb871e7acd3e546daad40c6e73aaf36ceb9e1.png",
+      "description": "Abstract modern sponsor company logo graphic, electric blue."
+    },
+    {
+      "category": "sponsor_2",
+      "url": "https://static.prod-images.emergentagent.com/jobs/ac8bfdc1-b85e-47d9-b52f-f35445732af9/images/c4f0f082aae6388bbbfc9ad483ac701b0bee67918456ca5311a65c8fd2b8439c.png",
+      "description": "Abstract modern sponsor company logo graphic, sunny yellow."
+    }
+  ],
+  "instructions_to_main_agent": [
+    "1. Do not use 'Inter' for headings. Install and apply 'Clash Display' or 'Cabinet Grotesk' via font-face or Google Fonts.",
+    "2. All cards, buttons, and inputs MUST follow the Neo-Brutalist shadow style: `shadow-[4px_4px_0px_0px_rgba(10,10,10,1)]` and `border-2 border-black`.",
+    "3. Apply specific category colors to their respective badges: Music (Blue #2563EB), Sports (Green #22C55E), Cultural (Orange #F97316), Food (Yellow #EAB308).",
+    "4. Use the provided high-quality image URLs in the exact locations specified by their category descriptions. DO NOT use placeholder services like via.placeholder.com.",
+    "5. Ensure the homepage has an asymmetrical 'bento grid' for featured events, mixing large vertical, large horizontal, and small square blocks.",
+    "6. Build the Event Submission Form and Registration modals using Shadcn UI, but OVERRIDE their default styles to match the Neo-brutalist theme (remove border-radius, add heavy borders, solid shadows).",
+    "7. Include `data-testid` attributes on every single clickable element, button, and form input (e.g. data-testid='event-category-filter-music', data-testid='register-button')."
+  ]
+}
