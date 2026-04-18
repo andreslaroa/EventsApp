@@ -21,7 +21,6 @@ pipeline {
         stage('Run tests') {
             steps {
                 sh '''
-                    cd EventsApp
                     pip install -r backend/requirements.txt
                     pytest tests/ -v
                 '''
@@ -31,7 +30,6 @@ pipeline {
         stage('Docker build') {
             steps {
                 sh '''
-                    cd EventsApp
                     docker build -t $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG .
                     docker tag $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPO:latest
                 '''
