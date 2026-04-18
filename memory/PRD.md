@@ -1,68 +1,55 @@
 # City Events Platform - PRD
 
 ## Original Problem Statement
-Create a web page to announce events in my city. Anyone can submit events. Extended event details: Images, categories, ticket prices, organizer contact. User registration to save/bookmark events. Modern & colorful design with multiple event categories (Music, Sports, Cultural, Food festivals, etc.)
-
-## User Personas
-1. **Event Organizers** - Submit and manage events
-2. **Event Attendees** - Browse, search, and bookmark events
-3. **Admin** - Moderate submitted events (approve/reject)
+Create a web page to announce events in my city, similar to Fever.com. Anyone can submit events. Extended event details with images, categories, ticket prices, organizer contact. User registration to save/bookmark events. Modern & colorful design. Admin moderation. Advanced filters. Fever-style UI with hero carousel, collections, reviews, related events.
 
 ## Architecture
-- **Frontend**: React.js with Tailwind CSS, Neo-Brutalist design
+- **Frontend**: React.js with Tailwind CSS, Neo-Brutalist Fever-style design
 - **Backend**: FastAPI (Python)
-- **Database**: MongoDB
+- **Database**: MongoDB (collections: users, events, bookmarks, reviews)
 - **Auth**: JWT with httpOnly cookies
 
 ## What's Been Implemented
+
 ### MVP (Session 1)
-- [x] User registration and login with JWT auth
-- [x] Event CRUD operations
-- [x] 8 event categories (Music, Sports, Cultural, Food, Art, Tech, Community, Other)
-- [x] Bookmark system for logged-in users
-- [x] Basic category filtering and search
-- [x] Image upload for events (base64)
-- [x] Neo-Brutalist UI design
-- [x] Responsive layout
-- [x] Sample events seeded on startup
+- [x] User registration/login (JWT auth with cookies)
+- [x] Event CRUD with 8 categories
+- [x] Bookmark system
+- [x] Basic search & category filtering
+- [x] Image upload (base64)
+- [x] Neo-Brutalist responsive UI
 
-### Admin Moderation (Session 2)
-- [x] Admin user seeding (admin@cityevents.com / admin123)
-- [x] Admin dashboard with stats (pending/published/rejected/users)
-- [x] Event approval workflow (approve/reject/delete)
-- [x] User-submitted events start as "pending"
-- [x] Admin-submitted events auto-published
-- [x] Pending submission success message for users
+### Admin Moderation + Advanced Filters (Session 2)
+- [x] Admin user (admin@cityevents.com / admin123)
+- [x] Admin dashboard (approve/reject/delete events)
+- [x] Date range, location, pricing, price range, time of day, sort by filters
+- [x] Active filter tags + clear all
+- [x] Pending submission workflow
 
-### Advanced Filters (Session 2)
-- [x] Date range filter (from/to date pickers)
-- [x] Location text search filter (city, venue, address)
-- [x] Free/Paid pricing toggle
-- [x] Price range filter (min/max for paid events)
-- [x] Time of Day filter (Morning, Afternoon, Evening, Night)
-- [x] Sort By (Date asc/desc, Price asc/desc, Recently added)
-- [x] Active filter tags with individual remove
-- [x] Clear All Filters button
-- [x] Event count display
-- [x] Collapsible filter panel
+### Fever-style Redesign (Session 3)
+- [x] Featured events hero carousel (horizontal scroll)
+- [x] Horizontal scrollable event rows grouped by category
+- [x] Quick date shortcuts (Today, This Weekend, This Week)
+- [x] Event badges: "New", "Popular", "Featured", "Free"
+- [x] "From $X" pricing format
+- [x] Related events on detail page
+- [x] User ratings & reviews system (1-5 stars + comment)
+- [x] Curated collections (Couples, Family, Nightlife, Outdoor, Trending)
+- [x] Collection pages
+- [x] Admin can set tags & featured flag on events
+- [x] 10 rich seed events with tags and featured flags
 
 ## Prioritized Backlog
-### P1 (High Priority)
-- Email notifications for new events
-- User profile page with submitted events
+### P1
+- User profile page with submitted events history
+- Email notifications for event approval
 
-### P2 (Medium Priority)
-- Map integration for event locations
-- Social sharing buttons
-- Comments/reviews on events
+### P2
 - Geolocation-based distance filtering
+- Social sharing buttons
+- Event reminders / calendar export
 
-### P3 (Low Priority)
+### P3
 - Event analytics for organizers
-- Export events to calendar
 - Multi-language support
-
-## Next Tasks
-1. Add user profile page with submitted events history
-2. Add geolocation-based distance filtering
-3. Add social sharing buttons
+- Ticket purchasing flow
