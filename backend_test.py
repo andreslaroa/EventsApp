@@ -402,6 +402,141 @@ class CityEventsAPITester:
         success, data = self.make_request('GET', 'auth/me', {}, 401)
         return self.log_test("Logout", success, "Still authenticated after logout" if not success else "")
 
+    def test_featured_events(self):
+        """Test featured events endpoint"""
+        success, data = self.make_request('GET', 'featured')
+        if success and 'events' in data:
+            events = data['events']
+            return self.log_test("Featured events", True, f"Got {len(events)} featured events")
+        return self.log_test("Featured events", False, str(data))
+
+    def test_collections_endpoints(self):
+        """Test collections endpoints"""
+        # Test get all collections
+        success, data = self.make_request('GET', 'collections')
+        if not success or 'collections' not in data:
+            return self.log_test("Collections endpoints", False, f"Get collections failed: {data}")
+        
+        collections = data['collections']
+        if len(collections) == 0:
+            return self.log_test("Collections endpoints", False, "No collections found")
+        
+        # Test individual collection
+        test_collection = collections[0]
+        slug = test_collection['slug']
+        success, data = self.make_request('GET', f'collections/{slug}')
+        if not success or 'collection' not in data or 'events' not in data:
+            return self.log_test("Collections endpoints", False, f"Get collection {slug} failed: {data}")
+        
+        return self.log_test("Collections endpoints", True, f"Collections working, tested {slug}")
+
+    def test_reviews_functionality(self):
+        """Test reviews endpoints"""
+        if not self.user_id or not self.test_event_id:
+            return self.log_test("Reviews functionality", False, "Missing user or event")
+        
+        # Create a review
+        review_data = {
+            "rating": 5,
+            "comment": "Great event! Highly recommend."
+        }
+        
+        success, data = self.make_request('POST', f'events/{self.test_event_id}/reviews', review_data, 200)
+        if not success:
+            return self.log_test("Reviews functionality", False, f"Create review failed: {data}")
+        
+        # Get reviews for the event
+        success, data = self.make_request('GET', f'events/{self.test_event_id}/reviews')
+        if not success or 'reviews' not in data:
+            return self.log_test("Reviews functionality", False, f"Get reviews failed: {data}")
+        
+        reviews = data['reviews']
+        if len(reviews) == 0:
+            return self.log_test("Reviews functionality", False, "No reviews found after creation")
+        
+        # Check if our review is there
+        our_review = next((r for r in reviews if r.get('rating') == 5), None)
+        if not our_review:
+            return self.log_test("Reviews functionality", False, "Created review not found in list")
+        
+        return self.log_test("Reviews functionality", True, f"Reviews working, found {len(reviews)} reviews")
+
+    def test_related_events(self):
+        """Test related events endpoint"""
+        if not self.test_event_id:
+            return self.log_test("Related events", False, "No test event created")
+        
+        success, data = self.make_request('GET', f'events/{self.test_event_id}/related')
+        if success and 'events' in data:
+            events = data['events']
+            return self.log_test("Related events", True, f"Got {len(events)} related events")
+        return self.log_test("Related events", False, str(data))
+
+    def test_quick_date_filters(self):
+        """Test quick date filter functionality"""
+        # Test today filter
+        success, data = self.make_request('GET', 'events?quick_date=today')
+        if not success:
+            return self.log_test("Quick date filters", False, f"Today filter failed: {data}")
+        
+        # Test this weekend filter
+        success, data = self.make_request('GET', 'events?quick_date=this_weekend')
+        if not success:
+            return self.log_test("Quick date filters", False, f"This weekend filter failed: {data}")
+        
+        # Test this week filter
+        success, data = self.make_request('GET', 'events?quick_date=this_week')
+        if not success:
+            return self.log_test("Quick date filters", False, f"This week filter failed: {data}")
+        
+        return self.log_test("Quick date filters", True, "All quick date filters working")
+
+    def test_new_event_filters(self):
+        """Test new event filtering options"""
+        # Test tag filter
+        success, data = self.make_request('GET', 'events?tag=couples')
+        if not success:
+            return self.log_test("New event filters", False, f"Tag filter failed: {data}")
+        
+        # Test featured only filter
+        success, data = self.make_request('GET', 'events?featured_only=true')
+        if not success:
+            return self.log_test("New event filters", False, f"Featured only filter failed: {data}")
+        
+        return self.log_test("New event filters", True, "Tag and featured filters working")
+
+    def test_admin_event_update(self):
+        """Test admin event update functionality (tags/featured)"""
+        if not hasattr(self, 'admin_user_id') or not self.test_event_id:
+            return self.log_test("Admin event update", False, "No admin user or test event")
+        
+        # Login as admin
+        admin_data = {
+            "email": "admin@cityevents.com",
+            "password": "admin123"
+        }
+        success, data = self.make_request('POST', 'auth/login', admin_data, 200)
+        if not success:
+            return self.log_test("Admin event update", False, "Failed to login as admin")
+        
+        # Update event with tags and featured status
+        update_data = {
+            "tags": ["couples", "nightlife"],
+            "is_featured": True
+        }
+        
+        # Use PATCH method for admin update
+        url = f"{self.api_url}/admin/events/{self.test_event_id}"
+        try:
+            response = self.session.patch(url, json=update_data)
+            success = response.status_code == 200
+            if success:
+                return self.log_test("Admin event update", True, "Event tags and featured status updated")
+            else:
+                return self.log_test("Admin event update", False, f"Update failed with status {response.status_code}")
+        except Exception as e:
+            return self.log_test("Admin event update", False, f"Request failed: {str(e)}")
+
     def test_auth_required_endpoints(self):
         """Test that protected endpoints require authentication"""
         # Ensure we're logged out
@@ -434,6 +569,12 @@ class CityEventsAPITester:
         self.test_events_filtering()
         self.test_advanced_filters()
         
+        # New Fever-style features
+        self.test_featured_events()
+        self.test_collections_endpoints()
+        self.test_quick_date_filters()
+        self.test_new_event_filters()
+        
         # Auth tests
         self.test_user_registration()
         self.test_user_login()
@@ -442,11 +583,14 @@ class CityEventsAPITester:
         self.test_create_event()
         self.test_get_single_event()
         self.test_bookmark_functionality()
+        self.test_reviews_functionality()
+        self.test_related_events()
         
         # Admin tests
         self.test_admin_login()
         self.test_admin_endpoints()
         self.test_admin_moderation()
+        self.test_admin_event_update()
         
         # Security tests
         self.test_auth_required_endpoints()

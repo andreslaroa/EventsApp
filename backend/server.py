@@ -69,6 +69,8 @@ class EventCreate(BaseModel):
     organizer_email: str
     organizer_phone: Optional[str] = None
     image_url: Optional[str] = None
+    tags: Optional[List[str]] = []
+    is_featured: Optional[bool] = False
 
 class EventResponse(BaseModel):
     id: str
@@ -88,12 +90,36 @@ class EventResponse(BaseModel):
     created_by: str
     created_at: str
     status: str
+    tags: Optional[List[str]] = []
+    is_featured: Optional[bool] = False
+    avg_rating: Optional[float] = 0
+    review_count: Optional[int] = 0
+    bookmark_count: Optional[int] = 0
+
+class ReviewCreate(BaseModel):
+    rating: int  # 1-5
+    comment: Optional[str] = ""
+
+class CollectionCreate(BaseModel):
+    name: str
+    description: str
+    slug: str
+    icon: Optional[str] = None
 
 class BookmarkResponse(BaseModel):
     id: str
     user_id: str
     event_id: str
     created_at: str
+
+# Collections / Tags
+COLLECTIONS = [
+    {"slug": "couples", "name": "Best for Couples", "description": "Romantic experiences for two", "icon": "heart"},
+    {"slug": "family", "name": "Family Friendly", "description": "Fun for the whole family", "icon": "users"},
+    {"slug": "nightlife", "name": "Nightlife", "description": "The best after-dark experiences", "icon": "moon"},
+    {"slug": "outdoor", "name": "Outdoor Adventures", "description": "Get out and explore", "icon": "sun"},
+    {"slug": "trending", "name": "Trending Now", "description": "Most popular events right now", "icon": "flame"},
+]
 
 # Admin credentials from env
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@cityevents.com")
@@ -160,6 +186,95 @@ async def get_optional_user(request: Request) -> Optional[dict]:
         return await get_current_user(request)
     except HTTPException:
         return None
+
+async def serialize_event(event: dict) -> dict:
+    """Serialize a MongoDB event document with ratings and bookmark count."""
+    event_id = str(event["_id"])
+    
+    # Get avg rating and review count
+    pipeline = [
+        {"$match": {"event_id": event_id}},
+        {"$group": {"_id": None, "avg_rating": {"$avg": "$rating"}, "count": {"$sum": 1}}}
+    ]
+    rating_result = await db.reviews.aggregate(pipeline).to_list(1)
+    avg_rating = round(rating_result[0]["avg_rating"], 1) if rating_result else 0
+    review_count = rating_result[0]["count"] if rating_result else 0
+    
+    # Get bookmark count
+    bookmark_count = await db.bookmarks.count_documents({"event_id": event_id})
+    
+    return {
+        "id": event_id,
+        "title": event["title"],
+        "description": event["description"],
+        "category": event["category"],
+        "date": event["date"],
+        "time": event["time"],
+        "location": event["location"],
+        "address": event["address"],
+        "ticket_price": event["ticket_price"],
+        "is_free": event["is_free"],
+        "organizer_name": event["organizer_name"],
+        "organizer_email": event["organizer_email"],
+        "organizer_phone": event.get("organizer_phone"),
+        "image_url": event.get("image_url"),
+        "created_by": event["created_by"],
+        "created_at": event["created_at"].isoformat() if isinstance(event["created_at"], datetime) else event["created_at"],
+        "status": event["status"],
+        "tags": event.get("tags", []),
+        "is_featured": event.get("is_featured", False),
+        "avg_rating": avg_rating,
+        "review_count": review_count,
+        "bookmark_count": bookmark_count,
+    }
+
+async def serialize_events_light(events: list) -> list:
+    """Lightweight serialization without per-event DB lookups for list views."""
+    event_ids = [str(e["_id"]) for e in events]
+    
+    # Bulk get ratings
+    rating_pipeline = [
+        {"$match": {"event_id": {"$in": event_ids}}},
+        {"$group": {"_id": "$event_id", "avg_rating": {"$avg": "$rating"}, "count": {"$sum": 1}}}
+    ]
+    ratings = {r["_id"]: r async for r in db.reviews.aggregate(rating_pipeline)}
+    
+    # Bulk get bookmark counts
+    bm_pipeline = [
+        {"$match": {"event_id": {"$in": event_ids}}},
+        {"$group": {"_id": "$event_id", "count": {"$sum": 1}}}
+    ]
+    bookmarks = {b["_id"]: b["count"] async for b in db.bookmarks.aggregate(bm_pipeline)}
+    
+    result = []
+    for event in events:
+        eid = str(event["_id"])
+        r = ratings.get(eid, {})
+        result.append({
+            "id": eid,
+            "title": event["title"],
+            "description": event["description"],
+            "category": event["category"],
+            "date": event["date"],
+            "time": event["time"],
+            "location": event["location"],
+            "address": event["address"],
+            "ticket_price": event["ticket_price"],
+            "is_free": event["is_free"],
+            "organizer_name": event["organizer_name"],
+            "organizer_email": event["organizer_email"],
+            "organizer_phone": event.get("organizer_phone"),
+            "image_url": event.get("image_url"),
+            "created_by": event["created_by"],
+            "created_at": event["created_at"].isoformat() if isinstance(event["created_at"], datetime) else event["created_at"],
+            "status": event["status"],
+            "tags": event.get("tags", []),
+            "is_featured": event.get("is_featured", False),
+            "avg_rating": round(r.get("avg_rating", 0), 1),
+            "review_count": r.get("count", 0),
+            "bookmark_count": bookmarks.get(eid, 0),
+        })
+    return result
 
 async def get_admin_user(request: Request) -> dict:
     user = await get_current_user(request)
@@ -268,30 +383,15 @@ async def create_event(event_data: EventCreate, request: Request):
         "image_url": event_data.image_url,
         "created_by": user["id"],
         "created_at": datetime.now(timezone.utc),
-        "status": status
+        "status": status,
+        "tags": event_data.tags or [],
+        "is_featured": event_data.is_featured if user.get("role") == "admin" else False,
     }
     
     result = await db.events.insert_one(event_doc)
+    event_doc["_id"] = result.inserted_id
     
-    return {
-        "id": str(result.inserted_id),
-        "title": event_doc["title"],
-        "description": event_doc["description"],
-        "category": event_doc["category"],
-        "date": event_doc["date"],
-        "time": event_doc["time"],
-        "location": event_doc["location"],
-        "address": event_doc["address"],
-        "ticket_price": event_doc["ticket_price"],
-        "is_free": event_doc["is_free"],
-        "organizer_name": event_doc["organizer_name"],
-        "organizer_email": event_doc["organizer_email"],
-        "organizer_phone": event_doc["organizer_phone"],
-        "image_url": event_doc["image_url"],
-        "created_by": event_doc["created_by"],
-        "created_at": event_doc["created_at"].isoformat(),
-        "status": event_doc["status"]
-    }
+    return (await serialize_events_light([event_doc]))[0]
 
 @api_router.get("/events")
 async def get_events(
@@ -305,6 +405,9 @@ async def get_events(
     price_max: Optional[float] = None,
     time_of_day: Optional[str] = None,
     sort_by: Optional[str] = "date_asc",
+    quick_date: Optional[str] = None,
+    tag: Optional[str] = None,
+    featured_only: Optional[bool] = False,
     limit: int = 50,
     skip: int = 0
 ):
@@ -320,8 +423,24 @@ async def get_events(
             {"location": {"$regex": search, "$options": "i"}}
         ]
     
-    # Date range filter
-    if date_from or date_to:
+    # Quick date shortcuts
+    if quick_date:
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        if quick_date == "today":
+            query["date"] = today
+        elif quick_date == "this_weekend":
+            now = datetime.now(timezone.utc)
+            days_until_sat = (5 - now.weekday()) % 7
+            if days_until_sat == 0 and now.weekday() == 5:
+                days_until_sat = 0
+            saturday = (now + timedelta(days=days_until_sat)).strftime("%Y-%m-%d")
+            sunday = (now + timedelta(days=days_until_sat + 1)).strftime("%Y-%m-%d")
+            query["date"] = {"$gte": saturday, "$lte": sunday}
+        elif quick_date == "this_week":
+            now = datetime.now(timezone.utc)
+            end_of_week = (now + timedelta(days=(6 - now.weekday()))).strftime("%Y-%m-%d")
+            query["date"] = {"$gte": today, "$lte": end_of_week}
+    elif date_from or date_to:
         date_filter = {}
         if date_from:
             date_filter["$gte"] = date_from
@@ -329,11 +448,10 @@ async def get_events(
             date_filter["$lte"] = date_to
         query["date"] = date_filter
     
-    # Location filter (text search on location + address)
+    # Location filter
     if location:
         loc_regex = {"$regex": location, "$options": "i"}
         if "$or" in query:
-            # Combine with existing $or using $and
             existing_or = query.pop("$or")
             query["$and"] = [
                 {"$or": existing_or},
@@ -348,7 +466,6 @@ async def get_events(
     elif pricing == "paid":
         query["is_free"] = False
     
-    # Price range filter (only for paid events)
     if price_min is not None or price_max is not None:
         price_filter = {}
         if price_min is not None:
@@ -368,8 +485,6 @@ async def get_events(
         if time_of_day in time_ranges:
             t_start, t_end = time_ranges[time_of_day]
             if time_of_day == "night":
-                query["$or"] = query.get("$or", []) or []
-                # Night wraps around midnight
                 if "$and" not in query:
                     query["$and"] = []
                 query["$and"].append({
@@ -380,6 +495,14 @@ async def get_events(
                 })
             else:
                 query["time"] = {"$gte": t_start, "$lte": t_end}
+    
+    # Tags / collections filter
+    if tag:
+        query["tags"] = tag
+    
+    # Featured only
+    if featured_only:
+        query["is_featured"] = True
     
     # Sorting
     sort_field, sort_dir = "date", 1
@@ -394,32 +517,10 @@ async def get_events(
     elif sort_by == "newest":
         sort_field, sort_dir = "created_at", -1
     
-    projection = {"_id": 1, "title": 1, "description": 1, "category": 1, "date": 1, "time": 1, "location": 1, "address": 1, "ticket_price": 1, "is_free": 1, "organizer_name": 1, "organizer_email": 1, "organizer_phone": 1, "image_url": 1, "created_by": 1, "created_at": 1, "status": 1}
-    
     total = await db.events.count_documents(query)
-    events = await db.events.find(query, projection).sort(sort_field, sort_dir).skip(skip).limit(limit).to_list(limit)
+    events = await db.events.find(query).sort(sort_field, sort_dir).skip(skip).limit(limit).to_list(limit)
     
-    result = []
-    for event in events:
-        result.append({
-            "id": str(event["_id"]),
-            "title": event["title"],
-            "description": event["description"],
-            "category": event["category"],
-            "date": event["date"],
-            "time": event["time"],
-            "location": event["location"],
-            "address": event["address"],
-            "ticket_price": event["ticket_price"],
-            "is_free": event["is_free"],
-            "organizer_name": event["organizer_name"],
-            "organizer_email": event["organizer_email"],
-            "organizer_phone": event.get("organizer_phone"),
-            "image_url": event.get("image_url"),
-            "created_by": event["created_by"],
-            "created_at": event["created_at"].isoformat() if isinstance(event["created_at"], datetime) else event["created_at"],
-            "status": event["status"]
-        })
+    result = await serialize_events_light(events)
     
     return {"events": result, "total": total}
 
@@ -427,31 +528,197 @@ async def get_events(
 async def get_event(event_id: str):
     try:
         event = await db.events.find_one({"_id": ObjectId(event_id)})
-    except:
+    except Exception:
         raise HTTPException(status_code=400, detail="Invalid event ID")
     
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
     
-    return {
-        "id": str(event["_id"]),
-        "title": event["title"],
-        "description": event["description"],
-        "category": event["category"],
-        "date": event["date"],
-        "time": event["time"],
-        "location": event["location"],
-        "address": event["address"],
-        "ticket_price": event["ticket_price"],
-        "is_free": event["is_free"],
-        "organizer_name": event["organizer_name"],
-        "organizer_email": event["organizer_email"],
-        "organizer_phone": event.get("organizer_phone"),
-        "image_url": event.get("image_url"),
-        "created_by": event["created_by"],
-        "created_at": event["created_at"].isoformat() if isinstance(event["created_at"], datetime) else event["created_at"],
-        "status": event["status"]
+    return await serialize_event(event)
+
+@api_router.get("/events/{event_id}/related")
+async def get_related_events(event_id: str, limit: int = 6):
+    """Get related events based on same category, similar tags, or same location."""
+    try:
+        event = await db.events.find_one({"_id": ObjectId(event_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid event ID")
+    
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    # Find events in same category, excluding current event
+    related = await db.events.find({
+        "_id": {"$ne": ObjectId(event_id)},
+        "status": "published",
+        "$or": [
+            {"category": event["category"]},
+            {"location": {"$regex": event["location"].split()[0], "$options": "i"}} if event.get("location") else {"category": event["category"]}
+        ]
+    }).sort("date", 1).limit(limit).to_list(limit)
+    
+    # If not enough, fill with random published events
+    if len(related) < limit:
+        more = await db.events.find({
+            "_id": {"$ne": ObjectId(event_id), "$nin": [r["_id"] for r in related]},
+            "status": "published"
+        }).limit(limit - len(related)).to_list(limit - len(related))
+        related.extend(more)
+    
+    return {"events": await serialize_events_light(related)}
+
+# ===================== REVIEWS ENDPOINTS =====================
+
+@api_router.post("/events/{event_id}/reviews")
+async def create_review(event_id: str, review: ReviewCreate, request: Request):
+    user = await get_current_user(request)
+    
+    if review.rating < 1 or review.rating > 5:
+        raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
+    
+    try:
+        event = await db.events.find_one({"_id": ObjectId(event_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid event ID")
+    
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    # Check if user already reviewed
+    existing = await db.reviews.find_one({"event_id": event_id, "user_id": user["id"]})
+    if existing:
+        # Update existing review
+        await db.reviews.update_one(
+            {"_id": existing["_id"]},
+            {"$set": {"rating": review.rating, "comment": review.comment, "updated_at": datetime.now(timezone.utc)}}
+        )
+        return {"message": "Review updated", "id": str(existing["_id"])}
+    
+    review_doc = {
+        "event_id": event_id,
+        "user_id": user["id"],
+        "user_name": user["name"],
+        "rating": review.rating,
+        "comment": review.comment,
+        "created_at": datetime.now(timezone.utc),
     }
+    result = await db.reviews.insert_one(review_doc)
+    return {
+        "id": str(result.inserted_id),
+        "event_id": event_id,
+        "user_name": user["name"],
+        "rating": review.rating,
+        "comment": review.comment,
+        "created_at": review_doc["created_at"].isoformat()
+    }
+
+@api_router.get("/events/{event_id}/reviews")
+async def get_reviews(event_id: str, limit: int = 20, skip: int = 0):
+    reviews = await db.reviews.find(
+        {"event_id": event_id}, {"_id": 1, "user_name": 1, "rating": 1, "comment": 1, "created_at": 1, "user_id": 1}
+    ).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    
+    result = []
+    for r in reviews:
+        result.append({
+            "id": str(r["_id"]),
+            "user_name": r["user_name"],
+            "user_id": r.get("user_id", ""),
+            "rating": r["rating"],
+            "comment": r.get("comment", ""),
+            "created_at": r["created_at"].isoformat() if isinstance(r["created_at"], datetime) else r["created_at"]
+        })
+    
+    total = await db.reviews.count_documents({"event_id": event_id})
+    return {"reviews": result, "total": total}
+
+# ===================== COLLECTIONS ENDPOINTS =====================
+
+@api_router.get("/collections")
+async def get_collections():
+    return {"collections": COLLECTIONS}
+
+@api_router.get("/collections/{slug}")
+async def get_collection_events(slug: str, limit: int = 20):
+    collection = next((c for c in COLLECTIONS if c["slug"] == slug), None)
+    if not collection:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    
+    if slug == "trending":
+        # Trending = most bookmarked events
+        pipeline = [
+            {"$group": {"_id": "$event_id", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+            {"$limit": limit}
+        ]
+        trending_ids = [doc["_id"] async for doc in db.bookmarks.aggregate(pipeline)]
+        events = await db.events.find({"_id": {"$in": [ObjectId(eid) for eid in trending_ids]}, "status": "published"}).to_list(limit)
+    else:
+        events = await db.events.find({"tags": slug, "status": "published"}).sort("date", 1).limit(limit).to_list(limit)
+    
+    serialized = await serialize_events_light(events)
+    return {"collection": collection, "events": serialized}
+
+# ===================== FEATURED EVENTS =====================
+
+@api_router.get("/featured")
+async def get_featured_events(limit: int = 5):
+    events = await db.events.find({"is_featured": True, "status": "published"}).sort("date", 1).limit(limit).to_list(limit)
+    
+    # If not enough featured, fill with most bookmarked
+    if len(events) < limit:
+        existing_ids = [e["_id"] for e in events]
+        pipeline = [
+            {"$group": {"_id": "$event_id", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+            {"$limit": limit * 2}
+        ]
+        popular_ids = [doc["_id"] async for doc in db.bookmarks.aggregate(pipeline)]
+        more = await db.events.find({
+            "_id": {"$nin": existing_ids, "$in": [ObjectId(eid) for eid in popular_ids]},
+            "status": "published"
+        }).limit(limit - len(events)).to_list(limit - len(events))
+        events.extend(more)
+    
+    # If still not enough, get latest
+    if len(events) < limit:
+        existing_ids = [e["_id"] for e in events]
+        more = await db.events.find({
+            "_id": {"$nin": existing_ids},
+            "status": "published"
+        }).sort("created_at", -1).limit(limit - len(events)).to_list(limit - len(events))
+        events.extend(more)
+    
+    return {"events": await serialize_events_light(events)}
+
+# ===================== ADMIN: SET TAGS/FEATURED =====================
+
+@api_router.patch("/admin/events/{event_id}")
+async def update_event_admin(event_id: str, request: Request):
+    await get_admin_user(request)
+    body = await request.json()
+    
+    update_fields = {}
+    if "tags" in body:
+        update_fields["tags"] = body["tags"]
+    if "is_featured" in body:
+        update_fields["is_featured"] = body["is_featured"]
+    
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    
+    try:
+        result = await db.events.update_one(
+            {"_id": ObjectId(event_id)},
+            {"$set": update_fields}
+        )
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid event ID")
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    return {"message": "Event updated", "updated_fields": list(update_fields.keys())}
 
 # ===================== ADMIN ENDPOINTS =====================
 
@@ -698,7 +965,7 @@ async def startup_event():
         sample_events = [
             {
                 "title": "Summer Music Festival 2026",
-                "description": "Join us for the biggest music festival of the year! Featuring top artists from around the world, food vendors, and amazing vibes.",
+                "description": "Join us for the biggest music festival of the year! Featuring top artists from around the world, food vendors, and amazing vibes. Three stages, 20+ artists, and a sunset you won't forget.",
                 "category": "Music",
                 "date": "2026-02-15",
                 "time": "18:00",
@@ -712,11 +979,13 @@ async def startup_event():
                 "image_url": "https://images.pexels.com/photos/196652/pexels-photo-196652.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
                 "created_by": "system",
                 "created_at": datetime.now(timezone.utc),
-                "status": "published"
+                "status": "published",
+                "tags": ["couples", "nightlife"],
+                "is_featured": True,
             },
             {
                 "title": "International Food Festival",
-                "description": "Taste cuisines from over 30 countries! Live cooking demonstrations, food competitions, and family activities.",
+                "description": "Taste cuisines from over 30 countries! Live cooking demonstrations, food competitions, and family activities. A culinary journey around the world in one afternoon.",
                 "category": "Food",
                 "date": "2026-02-20",
                 "time": "11:00",
@@ -730,11 +999,13 @@ async def startup_event():
                 "image_url": "https://images.unsplash.com/photo-1760026759916-16e48b34cee5?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzF8MHwxfHNlYXJjaHwxfHxmb29kJTIwZmVzdGl2YWwlMjBvdXRkb29yJTIwY29va2luZ3xlbnwwfHx8fDE3NzU4OTk0ODN8MA&ixlib=rb-4.1.0&q=85",
                 "created_by": "system",
                 "created_at": datetime.now(timezone.utc),
-                "status": "published"
+                "status": "published",
+                "tags": ["family", "outdoor"],
+                "is_featured": True,
             },
             {
                 "title": "Cultural Heritage Parade",
-                "description": "Celebrate our city's diverse heritage with traditional performances, costumes, and art displays from various cultures.",
+                "description": "Celebrate our city's diverse heritage with traditional performances, costumes, and art displays from various cultures. A vibrant showcase of our community's rich traditions.",
                 "category": "Cultural",
                 "date": "2026-02-25",
                 "time": "10:00",
@@ -748,11 +1019,13 @@ async def startup_event():
                 "image_url": "https://images.unsplash.com/photo-1756694915372-ba61beaa2b0b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxOTJ8MHwxfHNlYXJjaHwyfHxjaXR5JTIwc3RyZWV0JTIwZmVzdGl2YWwlMjBjcm93ZHxlbnwwfHx8fDE3NzU4OTk0ODN8MA&ixlib=rb-4.1.0&q=85",
                 "created_by": "system",
                 "created_at": datetime.now(timezone.utc),
-                "status": "published"
+                "status": "published",
+                "tags": ["family", "outdoor"],
+                "is_featured": False,
             },
             {
                 "title": "City Marathon 2026",
-                "description": "Run through the most scenic routes of our city! Categories for all ages and skill levels. Medals for all finishers!",
+                "description": "Run through the most scenic routes of our city! Categories for all ages and skill levels. Medals for all finishers! 5K, 10K, half-marathon, and full marathon options.",
                 "category": "Sports",
                 "date": "2026-03-01",
                 "time": "06:00",
@@ -766,11 +1039,13 @@ async def startup_event():
                 "image_url": "https://images.unsplash.com/photo-1513593771513-7b58b6c4af38?w=800",
                 "created_by": "system",
                 "created_at": datetime.now(timezone.utc),
-                "status": "published"
+                "status": "published",
+                "tags": ["outdoor"],
+                "is_featured": True,
             },
             {
                 "title": "Tech Startup Meetup",
-                "description": "Network with fellow entrepreneurs, hear from successful founders, and pitch your ideas to investors.",
+                "description": "Network with fellow entrepreneurs, hear from successful founders, and pitch your ideas to investors. Drinks and snacks provided!",
                 "category": "Tech",
                 "date": "2026-02-18",
                 "time": "19:00",
@@ -784,11 +1059,13 @@ async def startup_event():
                 "image_url": "https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800",
                 "created_by": "system",
                 "created_at": datetime.now(timezone.utc),
-                "status": "published"
+                "status": "published",
+                "tags": ["nightlife"],
+                "is_featured": False,
             },
             {
                 "title": "Art in the Park",
-                "description": "Local artists showcase their work in this open-air gallery. Art workshops, live painting, and pieces for sale.",
+                "description": "Local artists showcase their work in this open-air gallery. Art workshops, live painting, and pieces for sale. Perfect for couples and art lovers.",
                 "category": "Art",
                 "date": "2026-02-28",
                 "time": "09:00",
@@ -802,12 +1079,94 @@ async def startup_event():
                 "image_url": "https://images.unsplash.com/photo-1531243269054-5ebf6f34081e?w=800",
                 "created_by": "system",
                 "created_at": datetime.now(timezone.utc),
-                "status": "published"
-            }
+                "status": "published",
+                "tags": ["couples", "outdoor"],
+                "is_featured": False,
+            },
+            {
+                "title": "Candlelight Concert: Vivaldi",
+                "description": "Experience Vivaldi's Four Seasons performed by a string quartet surrounded by hundreds of candles. An unforgettable evening of classical music in an intimate setting.",
+                "category": "Music",
+                "date": "2026-02-22",
+                "time": "20:00",
+                "location": "Grand Concert Hall",
+                "address": "100 Symphony Avenue",
+                "ticket_price": 35,
+                "is_free": False,
+                "organizer_name": "Candlelight Events",
+                "organizer_email": "info@candlelightevents.com",
+                "organizer_phone": "+1 555-0107",
+                "image_url": "https://images.unsplash.com/photo-1514320291840-2e0a9bf2a9ae?w=800",
+                "created_by": "system",
+                "created_at": datetime.now(timezone.utc),
+                "status": "published",
+                "tags": ["couples", "nightlife"],
+                "is_featured": True,
+            },
+            {
+                "title": "Kids Science Fair",
+                "description": "Hands-on experiments, robotics demos, and science shows for kids aged 5-14. Free admission for children, adults $5.",
+                "category": "Community",
+                "date": "2026-02-16",
+                "time": "10:00",
+                "location": "Community Center",
+                "address": "200 Community Drive",
+                "ticket_price": 5,
+                "is_free": False,
+                "organizer_name": "Education Foundation",
+                "organizer_email": "kids@educationfoundation.org",
+                "organizer_phone": "+1 555-0108",
+                "image_url": "https://images.unsplash.com/photo-1567306226416-28f0efdc88ce?w=800",
+                "created_by": "system",
+                "created_at": datetime.now(timezone.utc),
+                "status": "published",
+                "tags": ["family"],
+                "is_featured": False,
+            },
+            {
+                "title": "Rooftop Yoga Sunrise",
+                "description": "Start your morning with a rejuvenating yoga session on a rooftop overlooking the city skyline. All levels welcome. Mats provided.",
+                "category": "Sports",
+                "date": "2026-02-17",
+                "time": "06:30",
+                "location": "Skyline Tower Rooftop",
+                "address": "50 Tower Street, Midtown",
+                "ticket_price": 15,
+                "is_free": False,
+                "organizer_name": "Zen Fitness",
+                "organizer_email": "hello@zenfitness.com",
+                "organizer_phone": "+1 555-0109",
+                "image_url": "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=800",
+                "created_by": "system",
+                "created_at": datetime.now(timezone.utc),
+                "status": "published",
+                "tags": ["outdoor", "couples"],
+                "is_featured": False,
+            },
+            {
+                "title": "Night Market & Street Food",
+                "description": "Over 50 street food vendors, live DJ sets, craft cocktails, and artisan goods. Open every Friday night through the summer!",
+                "category": "Food",
+                "date": "2026-02-21",
+                "time": "19:00",
+                "location": "Warehouse District",
+                "address": "777 Industrial Blvd",
+                "ticket_price": 0,
+                "is_free": True,
+                "organizer_name": "Night Market Collective",
+                "organizer_email": "hello@nightmarket.co",
+                "organizer_phone": "+1 555-0110",
+                "image_url": "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=800",
+                "created_by": "system",
+                "created_at": datetime.now(timezone.utc),
+                "status": "published",
+                "tags": ["nightlife", "couples"],
+                "is_featured": True,
+            },
         ]
         
         await db.events.insert_many(sample_events)
-        logger.info("Seeded 6 sample events")
+        logger.info("Seeded 10 sample events")
 
 # Include the router
 app.include_router(api_router)
