@@ -32,6 +32,7 @@ pipeline {
         stage('Docker build') {
             steps {
                 sh '''
+                    export DOCKER_BUILDKIT=1
                     docker build -t $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG .
                     docker tag $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPO:latest
                 '''
