@@ -20,9 +20,11 @@ pipeline {
 
         stage('Run tests') {
             steps {
-                sh '''
-                    pip install -r backend/requirements.txt
-                    pytest tests/ -v
+                sh '''            
+                    ./.venv/bin/pip install --upgrade pip
+                    ./.venv/bin/pip install -r backend/requirements.txt
+                    
+                    ./.venv/bin/pytest tests/ -v
                 '''
             }
         }
