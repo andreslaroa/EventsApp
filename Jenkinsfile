@@ -6,7 +6,7 @@ pipeline {
         ECR_REGISTRY      = '339284817300.dkr.ecr.us-east-1.amazonaws.com'
         ECR_REPO          = 'events-app'
         IMAGE_TAG         = "${GIT_COMMIT}"
-        APP_EC2_IP        = '98.84.177.108'
+        APP_EC2_IP        = 'andreslaroa-eventsapp.duckdns.org'
         APP_EC2_USER      = 'ubuntu'
     }
 
