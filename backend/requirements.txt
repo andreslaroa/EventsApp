@@ -5,7 +5,8 @@ pydantic~=2.6.4
 python-multipart~=0.0.9
 
 # --- Base de Datos ---
-motor~=3.3.1
+pymongo==4.8.0
+motor==3.3.1
 # (pymongo se instalará automáticamente en la versión correcta gracias a motor)
 
 # --- Seguridad y Autenticación ---
