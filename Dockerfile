@@ -7,10 +7,6 @@ WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm install --legacy-peer-deps
 
-COPY frontend/package.json frontend/yarn.lock ./
-RUN yarn install
-COPY frontend/ .
-RUN yarn build
 # CRACO outputs to /app/frontend/build
 
 # ── Stage 2: Python backend ───────────────────────────────────
