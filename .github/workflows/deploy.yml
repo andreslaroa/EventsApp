@@ -64,4 +64,4 @@ jobs:
             docker pull ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com/events-app:latest
             docker stop events-app || true
             docker rm events-app || true
-            docker run -d --name events-app --restart always -p 8000:8000 -e MONGO_URL="${{ secrets.MONGO_URL }}" ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com/events-app:latest  
+            docker run -d --name events-app --restart always -p 8000:8000 -e MONGO_URL="${{ secrets.MONGO_URL }}" -e DB_NAME="events_db" ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com/events-app:latest  
