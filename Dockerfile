@@ -4,11 +4,12 @@ FROM node:20-alpine AS frontend-builder
 # Definimos la carpeta de trabajo virtual
 WORKDIR /app/frontend
 
+# Copiamos solo los archivos de dependencias e instalamos
+COPY frontend/package*.json ./
+
 ARG REACT_APP_API_URL
 ENV REACT_APP_API_URL=$REACT_APP_API_URL
 
-# Copiamos solo los archivos de dependencias e instalamos
-COPY frontend/package*.json ./
 RUN npm install --legacy-peer-deps
 
 # ¡AQUÍ ESTABA EL DETALLE! Copiamos el código y construimos
